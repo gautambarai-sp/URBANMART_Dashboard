@@ -25,7 +25,38 @@ def load_data(path: str = "data/urbanmart_sales.csv") -> pd.DataFrame:
     # Parse date column with multiple format attempts
     if 'date' in df.columns:
         # Try different date formats
-        df['date'] = pd.to_datetime(df['date'], format='%d/%m/%y', errors
+        df['date'] = pd.to_datetime(df['date'], format='%d/%m/%y', errors='coerce')
+        
+        # If parsing failed, try alternative formats
+        if df['date'].isna().all():
+            df['date'] = pd.to_datetime(df['date'], errors='coerce')
+        
+        # Drop rows with invalid dates
+        df = df[df['date'].notna()].copy()
+    
+    # Ensure numeric columns
+    numeric_cols = ['quantity', 'unit_price', 'discount_applied']
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    
+    # Calculate line revenue
+    if 'quantity' in df.columns and 'unit_price' in df.columns:
+        df['line_revenue'] = (df['quantity'] * df['unit_price']) - df.get('discount_applied', 0)
+    
+    # Add derived columns for analysis
+    if 'date' in df.columns and df['date'].notna().any():
+        df['year'] = df['date'].dt.year
+        df['month'] = df['date'].dt.month
+        df['month_name'] = df['date'].dt.strftime('%B')
+        df['quarter'] = df['date'].dt.quarter
+        df['day_of_week'] = df['date'].dt.day_name()
+        df['week'] = df['date'].dt.isocalendar().week
+    
+    # Calculate profit margin (assuming 40% margin as default)
+    df['profit'] = df['line_revenue'] * 0.4
+    
+    return df
 
 def create_slicers(df: pd.DataFrame) -> Dict:
     """Create interactive slicers (filters) in sidebar"""
@@ -35,19 +66,25 @@ def create_slicers(df: pd.DataFrame) -> Dict:
     filters = {}
     
     # Date range slicer
-    if 'date' in df.columns:
+    if 'date' in df.columns and df['date'].notna().any():
         st.sidebar.subheader("📅 Date Range")
         min_date = df['date'].min()
         max_date = df['date'].max()
-        date_range = st.sidebar.date_input(
-            "Select Period",
-            value=(min_date, max_date),
-            min_value=min_date,
-            max_value=max_date
-        )
-        if isinstance(date_range, tuple) and len(date_range) == 2:
-            filters['date'] = (pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1]))
-        st.sidebar.markdown("---")
+        
+        # Convert to date objects (not Timestamp)
+        if pd.notna(min_date) and pd.notna(max_date):
+            min_date = min_date.date()
+            max_date = max_date.date()
+            
+            date_range = st.sidebar.date_input(
+                "Select Period",
+                value=(min_date, max_date),
+                min_value=min_date,
+                max_value=max_date
+            )
+            if isinstance(date_range, tuple) and len(date_range) == 2:
+                filters['date'] = (pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1]))
+            st.sidebar.markdown("---")
     
     # Store Location slicer
     if 'store_location' in df.columns:
@@ -171,7 +208,7 @@ def create_advanced_visualizations(df: pd.DataFrame):
     
     # Visualization 1: Revenue Trend Analysis (Time Series)
     st.subheader("1️⃣ Revenue Trend Over Time")
-    if 'date' in df.columns:
+    if 'date' in df.columns and df['date'].notna().any():
         daily_revenue = df.groupby('date')['line_revenue'].sum().reset_index()
         fig1 = px.line(daily_revenue, x='date', y='line_revenue',
                       title='Daily Revenue Trend',
@@ -180,6 +217,8 @@ def create_advanced_visualizations(df: pd.DataFrame):
                         mode='markers', name='Daily Sales', marker=dict(size=4))
         fig1.update_layout(height=400, hovermode='x unified')
         st.plotly_chart(fig1, use_container_width=True)
+    else:
+        st.info("Date information not available for time series analysis")
     
     # Visualization 2: Category Performance Matrix
     col1, col2 = st.columns(2)
@@ -446,8 +485,16 @@ def main():
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Rows", f"{df.shape[0]:,}")
         col2.metric("Total Columns", f"{df.shape[1]}")
-        col3.metric("Date Range", f"{df['date'].min().date()} to {df['date'].max().date()}" if 'date' in df.columns else "N/A")
-        col4.metric("Unique Products", f"{df['product_name'].nunique():,}" if 'product_name' in df.columns else "N/A")
+        
+        if 'date' in df.columns and df['date'].notna().any():
+            col3.metric("Date Range", f"{df['date'].min().date()} to {df['date'].max().date()}")
+        else:
+            col3.metric("Date Range", "N/A")
+            
+        if 'product_name' in df.columns:
+            col4.metric("Unique Products", f"{df['product_name'].nunique():,}")
+        else:
+            col4.metric("Unique Products", "N/A")
         
         st.dataframe(df.head(10), use_container_width=True)
     
