@@ -22,33 +22,10 @@ def load_data(path: str = "data/urbanmart_sales.csv") -> pd.DataFrame:
     """Load CSV and do comprehensive cleaning"""
     df = pd.read_csv(path, low_memory=False)
     
-    # Parse date column
+    # Parse date column with multiple format attempts
     if 'date' in df.columns:
-        df['date'] = pd.to_datetime(df['date'], format='%d/%m/%y', errors='coerce')
-    
-    # Ensure numeric columns
-    numeric_cols = ['quantity', 'unit_price', 'discount_applied']
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-    
-    # Calculate line revenue
-    if 'quantity' in df.columns and 'unit_price' in df.columns:
-        df['line_revenue'] = (df['quantity'] * df['unit_price']) - df.get('discount_applied', 0)
-    
-    # Add derived columns for analysis
-    if 'date' in df.columns:
-        df['year'] = df['date'].dt.year
-        df['month'] = df['date'].dt.month
-        df['month_name'] = df['date'].dt.strftime('%B')
-        df['quarter'] = df['date'].dt.quarter
-        df['day_of_week'] = df['date'].dt.day_name()
-        df['week'] = df['date'].dt.isocalendar().week
-    
-    # Calculate profit margin (assuming 40% margin as default)
-    df['profit'] = df['line_revenue'] * 0.4
-    
-    return df
+        # Try different date formats
+        df['date'] = pd.to_datetime(df['date'], format='%d/%m/%y', errors
 
 def create_slicers(df: pd.DataFrame) -> Dict:
     """Create interactive slicers (filters) in sidebar"""
